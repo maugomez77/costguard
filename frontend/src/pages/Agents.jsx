@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Bot, CircleOff, Circle, Clock, Cpu } from 'lucide-react'
 import { fetchWithDemo, api } from '../api'
 
@@ -21,10 +21,27 @@ function timeAgo(dateStr) {
 
 export default function Agents() {
   const [data, setData] = useState(null)
+  const [acting, setActing] = useState(null)
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     fetchWithDemo(() => api.agents(), 'agents').then(setData)
   }, [])
+
+  useEffect(() => { reload() }, [reload])
+
+  async function toggleCircuit(agent) {
+    setActing(agent.id)
+    try {
+      const action = agent.circuit === 'open' ? 'close' : 'open'
+      const reason = action === 'open' ? 'Manual emergency stop from dashboard' : undefined
+      await api.circuit(agent.id, action, reason)
+      reload()
+    } catch (e) {
+      alert(`Failed: ${e.message}`)
+    } finally {
+      setActing(null)
+    }
+  }
 
   if (!data) return <div className="page-header"><h1>Loading...</h1></div>
 
@@ -117,12 +134,16 @@ export default function Agents() {
                   </td>
                   <td>
                     {agent.circuit === 'open' ? (
-                      <button className="btn btn-outline" style={{ fontSize: 12, padding: '4px 10px' }}>
-                        Reset Circuit
+                      <button className="btn btn-outline" style={{ fontSize: 12, padding: '4px 10px' }}
+                        disabled={acting === agent.id}
+                        onClick={() => toggleCircuit(agent)}>
+                        {acting === agent.id ? 'Closing...' : 'Reset Circuit'}
                       </button>
                     ) : (
-                      <button className="btn btn-danger" style={{ fontSize: 12, padding: '4px 10px' }}>
-                        Open Circuit
+                      <button className="btn btn-danger" style={{ fontSize: 12, padding: '4px 10px' }}
+                        disabled={acting === agent.id}
+                        onClick={() => toggleCircuit(agent)}>
+                        {acting === agent.id ? 'Opening...' : 'Open Circuit'}
                       </button>
                     )}
                   </td>
@@ -148,7 +169,11 @@ export default function Agents() {
                 <div style={{ color: 'var(--red)', fontSize: 13 }}>{agent.circuit_reason}</div>
                 <div style={{ color: 'var(--text-dim)', fontSize: 12 }}>Opened {timeAgo(agent.circuit_opened_at)}</div>
               </div>
-              <button className="btn btn-primary" style={{ fontSize: 12 }}>Close Circuit</button>
+              <button className="btn btn-primary" style={{ fontSize: 12 }}
+                onClick={() => toggleCircuit(agent)}
+                disabled={acting === agent.id}>
+                {acting === agent.id ? 'Closing...' : 'Close Circuit'}
+              </button>
             </div>
           ))}
         </div>
