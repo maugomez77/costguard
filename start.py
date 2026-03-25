@@ -2,26 +2,30 @@
 
 import os
 import json
+import random
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
-STORE_FILE = Path.home() / ".costguard" / "store.json"
+STORE_DIR = Path.home() / ".costguard"
+STORE_FILE = STORE_DIR / "store.json"
+
 
 def seed_if_empty():
-    """Seed demo data on first run so the app has real working data."""
+    """Seed demo data by writing one big JSON file (fast, no per-call saves)."""
     if STORE_FILE.exists():
-        data = json.loads(STORE_FILE.read_text())
-        if data.get("projects"):
-            print(f"[startup] Store exists with {len(data['projects'])} projects — skipping seed")
-            return
+        try:
+            data = json.loads(STORE_FILE.read_text())
+            if data.get("projects"):
+                print(f"[startup] Store exists with {len(data['projects'])} projects — skipping seed")
+                return
+        except Exception:
+            pass
 
     print("[startup] No data found — seeding demo data...")
-    from costguard.models import Agent, ApiCall, Project, Provider
-    from costguard.store import save_agent, save_call, save_project
-    from costguard.pricing import estimate_cost
-    from datetime import datetime, timedelta, timezone
-    import random
 
-    # Use a fixed API key for the demo so the frontend can connect
+    from costguard.models import Agent, ApiCall, Project, Provider
+    from costguard.pricing import estimate_cost
+
     DEMO_API_KEY = os.environ.get("DEMO_API_KEY", "cg_demo_costguard_2026")
 
     project = Project(
@@ -30,7 +34,6 @@ def seed_if_empty():
         budget_monthly=1500.0,
         hard_limit=2000.0,
     )
-    save_project(project)
 
     agents_def = [
         ("research-agent", "langchain", [Provider.OPENAI, Provider.ANTHROPIC]),
@@ -45,7 +48,6 @@ def seed_if_empty():
     agents = []
     for name, framework, providers in agents_def:
         agent = Agent(project_id=project.id, name=name, framework=framework, providers=providers)
-        save_agent(agent)
         agents.append(agent)
 
     now = datetime.now(timezone.utc)
@@ -56,12 +58,12 @@ def seed_if_empty():
         Provider.DEEPSEEK: ["deepseek-v3"],
     }
 
-    total_calls = 0
+    calls = []
     total_cost = 0.0
 
     for day in range(30):
         ts = now - timedelta(days=30 - day)
-        daily_calls = random.randint(80, 300) if day % 7 < 5 else random.randint(20, 80)
+        daily_calls = random.randint(60, 200) if day % 7 < 5 else random.randint(15, 60)
 
         for _ in range(daily_calls):
             agent = random.choice(agents)
@@ -83,18 +85,24 @@ def seed_if_empty():
                 cost=cost,
                 latency_ms=random.randint(150, 8000),
                 cached=random.random() < 0.12,
-                timestamp=ts + timedelta(
-                    hours=random.randint(6, 23),
-                    minutes=random.randint(0, 59),
-                ),
+                timestamp=ts + timedelta(hours=random.randint(6, 23), minutes=random.randint(0, 59)),
             )
-            save_call(call)
-            total_calls += 1
+            calls.append(call)
             total_cost += cost
 
-    print(f"[startup] Seeded: {len(agents)} agents, {total_calls:,} calls, ${total_cost:.2f} total cost")
+    # Write everything in one shot
+    store_data = {
+        "projects": [project.model_dump(mode="json")],
+        "agents": [a.model_dump(mode="json") for a in agents],
+        "calls": [c.model_dump(mode="json") for c in calls],
+        "alerts": [],
+    }
+
+    STORE_DIR.mkdir(parents=True, exist_ok=True)
+    STORE_FILE.write_text(json.dumps(store_data, default=str, indent=2))
+
+    print(f"[startup] Seeded: {len(agents)} agents, {len(calls):,} calls, ${total_cost:.2f}")
     print(f"[startup] Demo API key: {DEMO_API_KEY}")
-    print(f"[startup] Project ID: {project.id}")
 
 
 if __name__ == "__main__":
