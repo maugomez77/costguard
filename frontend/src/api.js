@@ -1,7 +1,7 @@
 const BASE = import.meta.env.VITE_API_URL || ''
 
 async function request(path, options = {}) {
-  const apiKey = localStorage.getItem('cg_api_key') || 'demo'
+  const apiKey = localStorage.getItem('cg_api_key') || 'cg_demo_costguard_2026'
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: {

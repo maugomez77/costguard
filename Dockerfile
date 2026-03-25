@@ -11,6 +11,8 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir -e .
 COPY --from=frontend /app/frontend/dist ./frontend/dist
+COPY start.py ./
 ENV PORT=8000
+ENV DEMO_API_KEY=cg_demo_costguard_2026
 EXPOSE 8000
-CMD uvicorn costguard.api:app --host 0.0.0.0 --port $PORT
+CMD python start.py
