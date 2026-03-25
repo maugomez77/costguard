@@ -1,14 +1,6 @@
 services:
   - type: web
     name: costguard
-    runtime: python
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     plan: free
-    buildCommand: |
-      pip install -e . &&
-      cd frontend && npm install && npm run build
-    startCommand: uvicorn costguard.api:app --host 0.0.0.0 --port $PORT
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.11"
-      - key: NODE_VERSION
-        value: "20"
