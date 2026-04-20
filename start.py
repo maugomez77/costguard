@@ -8,7 +8,12 @@ from datetime import datetime, timedelta, timezone
 
 def seed_if_empty():
     """Seed demo data via the store layer (DB when DATABASE_URL is set, JSON file otherwise)."""
+    # Ensure the table exists before any read — otherwise this racing with
+    # uvicorn's FastAPI lifespan init_db() would blow up on SELECT.
+    from costguard.database import init_db
     from costguard.store import bulk_seed, has_any_projects
+
+    init_db()
 
     if has_any_projects():
         print("[seed] Store already populated — skipping")
