@@ -1,26 +1,18 @@
 """Startup script: launch uvicorn immediately, seed in background thread."""
 
 import os
-import json
 import random
 import threading
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
-
-STORE_DIR = Path.home() / ".costguard"
-STORE_FILE = STORE_DIR / "store.json"
 
 
 def seed_if_empty():
-    """Seed demo data by writing one big JSON file."""
-    if STORE_FILE.exists():
-        try:
-            data = json.loads(STORE_FILE.read_text())
-            if data.get("projects"):
-                print(f"[seed] Store has {len(data['projects'])} projects — skipping")
-                return
-        except Exception:
-            pass
+    """Seed demo data via the store layer (DB when DATABASE_URL is set, JSON file otherwise)."""
+    from costguard.store import bulk_seed, has_any_projects
+
+    if has_any_projects():
+        print("[seed] Store already populated — skipping")
+        return
 
     print("[seed] Seeding demo data...")
 
@@ -41,9 +33,10 @@ def seed_if_empty():
         ("devops-monitor", "custom", [Provider.ANTHROPIC, Provider.DEEPSEEK]),
     ]
 
-    agents = []
-    for name, framework, providers in agents_def:
-        agents.append(Agent(project_id=project.id, name=name, framework=framework, providers=providers))
+    agents = [
+        Agent(project_id=project.id, name=name, framework=framework, providers=providers)
+        for name, framework, providers in agents_def
+    ]
 
     now = datetime.now(timezone.utc)
     mp = {
@@ -69,13 +62,12 @@ def seed_if_empty():
                 timestamp=ts + timedelta(hours=random.randint(6, 23), minutes=random.randint(0, 59)),
             ))
 
-    STORE_DIR.mkdir(parents=True, exist_ok=True)
-    STORE_FILE.write_text(json.dumps({
+    bulk_seed({
         "projects": [project.model_dump(mode="json")],
         "agents": [a.model_dump(mode="json") for a in agents],
         "calls": [c.model_dump(mode="json") for c in calls],
         "alerts": [],
-    }, default=str))
+    })
 
     print(f"[seed] Done: {len(agents)} agents, {len(calls)} calls")
 

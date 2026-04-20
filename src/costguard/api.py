@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -9,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from .database import init_db
 from .engine import close_circuit, ingest, open_circuit
 from .models import (
     Agent,
@@ -30,10 +32,18 @@ from .store import (
     save_project,
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
 app = FastAPI(
     title="Cost Guard",
     description="Real-time cost monitoring and circuit breakers for AI agents",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

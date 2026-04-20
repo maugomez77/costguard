@@ -1,4 +1,9 @@
-"""Persistence layer for Cost Guard."""
+"""Persistence layer for Cost Guard.
+
+Hybrid: Postgres JSONB blob when DATABASE_URL is set (Render), JSON file fallback
+for local dev / CLI. Render free tier has ephemeral disk — JSON would be wiped on
+every cold start, so production must use Postgres.
+"""
 
 from __future__ import annotations
 
@@ -6,21 +11,56 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .database import KVStore, SessionLocal, is_db_enabled
 from .models import Agent, Alert, ApiCall, Project, SpendSummary
 
 STORE_DIR = Path.home() / ".costguard"
 STORE_FILE = STORE_DIR / "store.json"
 
+_EMPTY: dict = {"projects": [], "agents": [], "calls": [], "alerts": []}
+_KV_KEY = "main"
+
 
 def _load() -> dict:
+    if is_db_enabled():
+        with SessionLocal() as s:
+            row = s.get(KVStore, _KV_KEY)
+            if row and row.value:
+                return {**_EMPTY, **row.value}
+            return {**_EMPTY}
     if not STORE_FILE.exists():
-        return {"projects": [], "agents": [], "calls": [], "alerts": []}
-    return json.loads(STORE_FILE.read_text())
+        return {**_EMPTY}
+    return {**_EMPTY, **json.loads(STORE_FILE.read_text())}
 
 
 def _save(data: dict) -> None:
+    if is_db_enabled():
+        # Round-trip through json to coerce datetimes/enums into JSONB-safe
+        # primitives, matching the file path's `default=str` behavior.
+        safe = json.loads(json.dumps(data, default=str))
+        with SessionLocal() as s:
+            row = s.get(KVStore, _KV_KEY)
+            if row:
+                row.value = safe
+            else:
+                s.add(KVStore(key=_KV_KEY, value=safe))
+            s.commit()
+        return
     STORE_DIR.mkdir(parents=True, exist_ok=True)
     STORE_FILE.write_text(json.dumps(data, default=str, indent=2))
+
+
+def bulk_seed(data: dict) -> None:
+    """Replace the entire store with `data` in a single write.
+
+    Used by the demo seeder so seeding ~2000 calls doesn't do 2000 full-blob
+    round-trips. `data` must be shaped like the store dict.
+    """
+    _save({**_EMPTY, **data})
+
+
+def has_any_projects() -> bool:
+    return bool(_load().get("projects"))
 
 
 # --- Projects ---
